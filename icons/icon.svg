@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <rect width="96" height="96" rx="20" fill="#1e1f26"/>
+  <rect x="20" y="30" width="56" height="40" rx="6" fill="#2a2c36" stroke="#6c8cff" stroke-width="3"/>
+  <g fill="#6c8cff">
+    <rect x="28" y="40" width="8" height="6" rx="1.5"/>
+    <rect x="40" y="40" width="8" height="6" rx="1.5"/>
+    <rect x="52" y="40" width="8" height="6" rx="1.5"/>
+    <rect x="64" y="40" width="4" height="6" rx="1.5"/>
+    <rect x="28" y="52" width="40" height="6" rx="1.5"/>
+  </g>
+  <rect x="44" y="64" width="3" height="14" fill="#6c8cff">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+</svg>

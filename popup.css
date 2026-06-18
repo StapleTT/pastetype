@@ -1,0 +1,118 @@
+:root {
+  --bg: #080808;
+  --panel: #141414;
+  --text: #e7e9f0;
+  --muted: #9aa0b4;
+  --accent: AccentColor;
+  --accent-2: AccentColor;
+  --danger: #ff6c6c;
+  --border: #2a2a2a;
+  --font: "Cascadia Code", ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  width: 320px;
+  padding: 14px;
+  font-family: var(--font);
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header h1 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  letter-spacing: 0.3px;
+}
+
+.field { display: block; margin-bottom: 12px; }
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  font-family: var(--font);
+  font-size: 12px;
+}
+
+.slider { margin-bottom: 12px; }
+
+.slider-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+.slider-head strong { color: var(--text); }
+
+input[type="range"] {
+  width: 100%;
+  accent-color: auto;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+
+.hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.actions { display: flex; gap: 8px; }
+
+button {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button.primary {
+  background: #fff;
+  color: #080808;
+}
+button.primary:hover { background: #d9d9d9; }
+button.primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.ghost {
+  background: #fff;
+  color: #080808;
+  border-color: #fff;
+}
+
+.status {
+  margin: 10px 0 0;
+  min-height: 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.status.error { color: var(--danger); }
+.status.ok { color: #7fd88a; }

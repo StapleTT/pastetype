@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PasteType</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>PasteType</h1>
+  </header>
+
+  <label class="field">
+    <span class="field-label">Text to type</span>
+    <textarea id="text" rows="6" placeholder="Paste the text you want typed here…"></textarea>
+  </label>
+
+  <div class="slider">
+    <div class="slider-head">
+      <span>Speed</span>
+      <span><strong id="wpmVal">60</strong> WPM</span>
+    </div>
+    <input id="wpm" type="range" min="10" max="200" step="1" value="60" />
+  </div>
+
+  <div class="slider">
+    <div class="slider-head">
+      <span>Speed variation</span>
+      <span><strong id="devVal">25</strong>%</span>
+    </div>
+    <input id="dev" type="range" min="0" max="80" step="1" value="25" />
+  </div>
+
+  <div class="slider">
+    <div class="slider-head">
+      <span>Humanize pauses</span>
+      <span><strong id="pauseVal">Medium</strong></span>
+    </div>
+    <input id="pause" type="range" min="0" max="3" step="1" value="2" />
+  </div>
+
+  <label class="checkbox">
+    <input id="typos" type="checkbox" />
+    <span>Simulate typos (mistype, then fix)</span>
+  </label>
+
+  <label class="checkbox">
+    <input id="sound" type="checkbox" checked />
+    <span>Play a sound when finished</span>
+  </label>
+
+  <p class="hint" id="hint">Press Start, then click the text field you want typed into. A progress bar appears above it. Press <strong>Esc</strong> on the page to stop early.</p>
+
+  <div class="actions">
+    <button id="start" class="primary">Start typing</button>
+  </div>
+
+  <p class="status" id="status"></p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
