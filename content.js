@@ -8,6 +8,129 @@
 
   const api = typeof browser !== "undefined" ? browser : chrome;
 
+  // This script runs in every frame (all_frames). Only the top frame shows the
+  // banner; all frames can detect a click on their own editable elements. Frames
+  // coordinate via postMessage so picking/cancelling applies everywhere.
+  const isTop = window.top === window;
+  const FRAME_TAG = "__pastetype_signal__";
+
+  let remoteWatchdog = 0; // top frame: auto-hide remote progress if updates stop
+
+  // Relay a downward control signal to every descendant frame of this document.
+  function relayDown(payload) {
+    document.querySelectorAll("iframe, frame").forEach((f) => {
+      try { f.contentWindow && f.contentWindow.postMessage(payload, "*"); } catch (_) {}
+    });
+  }
+
+  // Arm picking in every descendant frame (carries the typing config down).
+  function fanOutStart(cfg) {
+    relayDown({ tag: FRAME_TAG, dir: "down", type: "start", cfg });
+  }
+
+  // Send a control signal to all frames in the tab: hop up to the top frame,
+  // which then fans it back down to every descendant (this frame included).
+  function signalAll(type) {
+    handleSignal(type, null); // act locally right away
+    const payload = { tag: FRAME_TAG, dir: "down", type };
+    try {
+      window.top.postMessage(payload, "*");
+    } catch (_) {
+      relayDown(payload); // cross-origin top unreachable: cover our own subtree
+    }
+  }
+
+  function handleSignal(type, data) {
+    if (type === "cancel") cancelLocal();
+    else if (type === "stoppick") {
+      // Someone started typing: every other frame stops picking and tears down.
+      if (state === "picking") finalCleanup();
+    } else if (type === "start" && data && data.cfg) {
+      if (state === "typing") return;
+      if (state === "picking") finalCleanup();
+      startPick(data.cfg);
+    }
+  }
+
+  // Send an upward message (child -> parent -> ... -> top) for the top frame to
+  // render. Rects ride along and get translated into top-frame coordinates at
+  // each iframe boundary.
+  function sendUp(type, extra) {
+    if (isTop) { handleUp(type, extra || {}); return; }
+    try {
+      window.parent.postMessage(
+        Object.assign({ tag: FRAME_TAG, dir: "up", type }, extra),
+        "*"
+      );
+    } catch (_) {}
+  }
+
+  // Find the <iframe>/<frame> element in this document whose window sent a msg.
+  function findFrameElement(srcWindow) {
+    const frames = document.querySelectorAll("iframe, frame");
+    for (const f of frames) {
+      try { if (f.contentWindow === srcWindow) return f; } catch (_) {}
+    }
+    return null;
+  }
+
+  // Top frame: draw/update the progress bar reported from a child frame.
+  function showRemoteProgress(rect, pct, eta) {
+    drawProgress(rect, pct, eta);
+    clearTimeout(remoteWatchdog);
+    remoteWatchdog = setTimeout(hideRemoteProgress, 4000); // safety net
+  }
+
+  function hideRemoteProgress() {
+    clearTimeout(remoteWatchdog);
+    remoteWatchdog = 0;
+    if (state === "idle") finalCleanup();
+    else if (ui) ui.progress.style.display = "none";
+  }
+
+  function handleUp(type, data) {
+    if (type === "progress") showRemoteProgress(data.rect, data.pct, data.eta);
+    else if (type === "progressend") hideRemoteProgress();
+  }
+
+  window.addEventListener(
+    "message",
+    (e) => {
+      const d = e.data;
+      if (!d || d.tag !== FRAME_TAG) return;
+
+      if (d.dir === "up") {
+        // Translate any rect from the child's viewport into ours, then either
+        // render (if we're the top frame) or keep bubbling upward.
+        let payload = d;
+        if (d.rect) {
+          const fe = findFrameElement(e.source);
+          if (fe) {
+            const fr = fe.getBoundingClientRect();
+            const ox = fr.left + fe.clientLeft;
+            const oy = fr.top + fe.clientTop;
+            payload = Object.assign({}, d, {
+              rect: {
+                left: d.rect.left + ox,
+                top: d.rect.top + oy,
+                width: d.rect.width,
+                height: d.rect.height,
+              },
+            });
+          }
+        }
+        if (isTop) handleUp(payload.type, payload);
+        else { try { window.parent.postMessage(payload, "*"); } catch (_) {} }
+        return;
+      }
+
+      // Downward control signal.
+      handleSignal(d.type, d);
+      relayDown(d); // continue fanning down the frame tree
+    },
+    true
+  );
+
   let state = "idle"; // idle | picking | typing
   let cancelled = false;
   let pendingCfg = null;
@@ -100,7 +223,9 @@
       <div class="highlight"></div>
       <div class="progress"><span class="bar"></span><span class="meta"></span></div>
     `;
-    (document.body || document.documentElement).appendChild(host);
+    // Prefer <html> so we never append into a contenteditable <body> (e.g. a
+    // rich-text editor), which would turn our overlay into edited content.
+    (document.documentElement || document.body).appendChild(host);
     ui = {
       host,
       banner: shadow.querySelector(".banner"),
@@ -115,46 +240,63 @@
     return ui;
   }
 
-  // Glue the highlight / progress bar to their targets every frame.
+  // Render the ASCII progress bar above a rectangle (in this frame's viewport).
+  function drawProgress(r, pct, eta) {
+    ensureUI();
+    const p = ui.progress;
+    p.style.display = "block";
+
+    // Spinning wheel + [=====-----] bar + percent/ETA.
+    const done = pct >= 100;
+    const spin = done ? "*" : SPINNER[Math.floor(performance.now() / 110) % SPINNER.length];
+    const W = 20;
+    const filled = Math.min(W, Math.round((pct / 100) * W));
+    ui.bar.innerHTML =
+      spin + " [" + "=".repeat(filled) +
+      '<span class="track">' + "-".repeat(W - filled) + "</span>] ";
+    ui.meta.textContent = Math.round(pct) + "%" + (eta ? "  " + eta : "");
+
+    const pw = p.offsetWidth;
+    const bottom = r.top + r.height;
+    let top = r.top - p.offsetHeight - 4;
+    if (top < 4) top = bottom + 4; // not enough room above → place below
+    p.style.left = Math.max(4, Math.min(r.left, window.innerWidth - pw - 4)) + "px";
+    p.style.top = top + "px";
+  }
+
+  // Glue the highlight to its target, and either draw the progress bar locally
+  // (top frame) or stream it up to the top frame (child frame).
   function tick() {
     rafId = 0;
-    if (!ui) return;
 
-    if (state === "picking" && hoverEl && document.contains(hoverEl)) {
-      const r = hoverEl.getBoundingClientRect();
-      const h = ui.highlight;
-      h.style.display = "block";
-      h.style.left = r.left + "px";
-      h.style.top = r.top + "px";
-      h.style.width = r.width + "px";
-      h.style.height = r.height + "px";
-    } else {
-      ui.highlight.style.display = "none";
+    if (ui) {
+      if (state === "picking" && hoverEl && document.contains(hoverEl)) {
+        const r = hoverEl.getBoundingClientRect();
+        const h = ui.highlight;
+        h.style.display = "block";
+        h.style.left = r.left + "px";
+        h.style.top = r.top + "px";
+        h.style.width = r.width + "px";
+        h.style.height = r.height + "px";
+      } else {
+        ui.highlight.style.display = "none";
+      }
     }
 
-    if (typeEl && document.contains(typeEl)) {
+    if (state === "typing" && typeEl && document.contains(typeEl)) {
       const r = typeEl.getBoundingClientRect();
-      const p = ui.progress;
-      p.style.display = "block";
-
-      // ASCII progress: spinning wheel + [=====-----] bar + percent/ETA.
-      const done = progressPct >= 100;
-      const spin = done ? "*" : SPINNER[Math.floor(performance.now() / 110) % SPINNER.length];
-      const W = 20;
-      const filled = Math.min(W, Math.round((progressPct / 100) * W));
-      ui.bar.innerHTML =
-        spin + " [" + "=".repeat(filled) +
-        '<span class="track">' + "-".repeat(W - filled) + "</span>] ";
-      ui.meta.textContent = Math.round(progressPct) + "%" + (etaText ? "  " + etaText : "");
-
-      const pw = p.offsetWidth;
-      let top = r.top - p.offsetHeight - 4;
-      if (top < 4) top = r.bottom + 4; // not enough room above → place below
-      p.style.left = Math.max(4, Math.min(r.left, window.innerWidth - pw - 4)) + "px";
-      p.style.top = top + "px";
+      if (isTop) {
+        drawProgress(r, progressPct, etaText);
+      } else {
+        sendUp("progress", {
+          pct: progressPct,
+          eta: etaText,
+          rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+        });
+      }
     }
 
-    rafId = requestAnimationFrame(tick);
+    if (state !== "idle") rafId = requestAnimationFrame(tick);
   }
 
   function startRaf() {
@@ -164,6 +306,7 @@
   // --- Lifecycle / cleanup ---------------------------------------------------
   function stopPicking() {
     document.removeEventListener("mousemove", onPickMove, true);
+    document.removeEventListener("mouseout", onPickOut, true);
     document.removeEventListener("mousedown", onPickDown, true);
     document.removeEventListener("click", swallowClick, true);
     if (ui) {
@@ -185,11 +328,17 @@
     state = "idle";
   }
 
-  function cancelAll() {
+  // Cancel just this frame.
+  function cancelLocal() {
     cancelled = true;
     // If we're mid-typing, the loop's finally block will clean up. Otherwise do
     // it now.
     if (state !== "typing") finalCleanup();
+  }
+
+  // Cancel everywhere (this frame plus all others in the tab).
+  function cancelAll() {
+    signalAll("cancel");
   }
 
   // --- Pick mode -------------------------------------------------------------
@@ -198,10 +347,17 @@
     cancelled = false;
     state = "picking";
     ensureUI();
-    ui.banner.style.display = "flex";
-    ui.bannerText.textContent =
-      "PasteType: click the text field to type into — or press Esc / Cancel.";
+    // Only the top frame shows the instruction banner, so iframes don't each pop
+    // their own. Every frame still watches for clicks on its own fields.
+    if (isTop) {
+      ui.banner.style.display = "flex";
+      ui.bannerText.textContent =
+        "PasteType: click the text field to type into, or press Esc / Cancel.";
+    } else {
+      ui.banner.style.display = "none";
+    }
     document.addEventListener("mousemove", onPickMove, true);
+    document.addEventListener("mouseout", onPickOut, true);
     document.addEventListener("mousedown", onPickDown, true);
     document.addEventListener("click", swallowClick, true);
     document.addEventListener("keydown", onKey, true);
@@ -212,22 +368,33 @@
     hoverEl = closestEditable(e.target);
   }
 
-  // Swallow the click that follows our pick mousedown so the page doesn't act
-  // on it. Only active while picking.
+  // Clear the highlight when the cursor leaves this document (e.g. moves into a
+  // different frame), so a stale highlight doesn't linger.
+  function onPickOut(e) {
+    if (!e.relatedTarget) hoverEl = null;
+  }
+
+  // Only intercept clicks that land on an editable field. Clicks anywhere else
+  // pass through untouched, so the page stays fully usable while picking.
   function swallowClick(e) {
     if (state !== "picking") return;
-    e.preventDefault();
-    e.stopPropagation();
+    if (closestEditable(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   }
 
   function onPickDown(e) {
     if (state !== "picking") return;
     const el = closestEditable(e.target);
+    if (!el) return; // clicked a non-editable spot: let it through, keep picking
     e.preventDefault();
     e.stopPropagation();
-    if (!el) return; // clicked a non-editable spot; keep picking
     stopPicking();
+    // Start typing first (sets state to "typing") so the stoppick signal we
+    // receive back doesn't tear down this frame; then tell other frames to stop.
     beginTyping(el, pendingCfg);
+    signalAll("stoppick");
   }
 
   function onKey(e) {
@@ -399,8 +566,16 @@
     progressPct = 0;
     etaText = "";
     el.focus();
-    ensureUI();
-    ui.progress.style.display = "block";
+    // The top frame draws the bar locally; child frames have no UI of their own
+    // and stream progress up to the top frame to render (see tick()).
+    if (isTop) {
+      ensureUI();
+      ui.progress.style.display = "block";
+    } else if (ui) {
+      // Drop the picking host so nothing renders inside this child frame.
+      if (ui.host.parentNode) ui.host.parentNode.removeChild(ui.host);
+      ui = null;
+    }
     startRaf();
 
     const scale = [0, 0.5, 1, 1.8][cfg.pauseLevel] ?? 1;
@@ -445,14 +620,29 @@
     } catch (err) {
       console.error("PasteType: typing error", err);
     } finally {
-      state = "idle";
+      const rectNow = () => {
+        const r = typeEl && document.contains(typeEl) ? typeEl.getBoundingClientRect() : null;
+        return r && { left: r.left, top: r.top, width: r.width, height: r.height };
+      };
       if (completed) {
         progressPct = 100;
         etaText = "done";
         if (cfg.sound) playDoneSound();
-        // Let the finished bar linger briefly, then remove everything.
-        setTimeout(finalCleanup, 1200);
+        const r = rectNow();
+        if (isTop) {
+          state = "idle";
+          if (r) drawProgress(r, 100, "done"); // final frame (tick has stopped)
+          setTimeout(finalCleanup, 1200);
+        } else {
+          if (r) sendUp("progress", { pct: 100, eta: "done", rect: r });
+          state = "idle";
+          // Let the finished bar linger, then tell the top frame to remove it.
+          setTimeout(() => { sendUp("progressend"); finalCleanup(); }, 1200);
+        }
       } else {
+        // Cancelled. The top frame is also torn down via the cancel signal.
+        state = "idle";
+        if (!isTop) sendUp("progressend");
         finalCleanup();
       }
     }
@@ -472,12 +662,15 @@
       return;
     }
     if (msg.type === "start") {
+      // Popup sends this only to the top frame; we arm here and fan the config
+      // out to every child frame so a field in an iframe can also be picked.
       if (state === "typing") {
-        sendResponse({ ok: false, error: "Already typing — press Esc to stop first." });
+        sendResponse({ ok: false, error: "Already typing. Press Esc to stop first." });
         return;
       }
       if (state === "picking") finalCleanup(); // restart with new settings
       startPick(msg);
+      fanOutStart(msg);
       sendResponse({ ok: true });
       return;
     }

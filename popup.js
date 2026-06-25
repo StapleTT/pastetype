@@ -75,11 +75,15 @@ async function getActiveTab() {
 // before the extension (or was reloaded without it).
 async function ensureContentScript(tabId) {
   try {
-    await api.tabs.sendMessage(tabId, { type: "ping" });
+    // Talk to the top frame only; it coordinates the child frames itself.
+    await api.tabs.sendMessage(tabId, { type: "ping" }, { frameId: 0 });
     return true;
   } catch (_) {
     try {
-      await api.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+      await api.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files: ["content.js"],
+      });
       return true;
     } catch (e) {
       return false;
@@ -90,7 +94,7 @@ async function ensureContentScript(tabId) {
 els.start.addEventListener("click", async () => {
   const text = els.text.value;
   if (!text.trim()) {
-    setStatus("Nothing to type — paste some text first.", "error");
+    setStatus("Nothing to type. Paste some text first.", "error");
     return;
   }
 
@@ -117,7 +121,7 @@ els.start.addEventListener("click", async () => {
   };
 
   try {
-    const res = await api.tabs.sendMessage(tab.id, config);
+    const res = await api.tabs.sendMessage(tab.id, config, { frameId: 0 });
     if (res && res.ok) {
       setStatus("Now click the text field on the page.", "ok");
       // Close the popup so the user can click the target field.
