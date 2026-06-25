@@ -4,8 +4,6 @@ A Firefox extension that types a pasted chunk of text into a focused field as if
 human were entering it. It offers an adjustable typing speed, speed variation,
 random human-like pauses, and a sound when it finishes.
 
-**Author:** Staple
-
 ## Features
 
 - **Speed slider (WPM):** 10 to 200 words per minute (5 chars/word).
@@ -28,7 +26,6 @@ random human-like pauses, and a sound when it finishes.
 - Press **Esc** on the page (or **Cancel** in the banner) to stop early.
 
 ## Install (temporary, for development)
-
 1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on…**
 3. Select the `manifest.json` file in this folder.
@@ -38,7 +35,6 @@ Firefox restarts. To package permanently, zip the folder's contents and submit t
 addons.mozilla.org, or use `web-ext`.
 
 ## Usage
-
 1. Click the PasteType toolbar icon.
 2. Paste your text and set the WPM, variation, and pauses.
 3. Press **Start typing**. A banner appears on the page.
@@ -47,14 +43,12 @@ addons.mozilla.org, or use `web-ext`.
 5. Hear the chime when it's done. Press **Esc** or **Cancel** to stop mid-way.
 
 ## Notes
-
 - It can't run on browser-internal pages such as `about:`, `addons.mozilla.org`,
   and the Add-ons Manager, because Firefox blocks extensions there.
 - The completion sound uses the Web Audio API, so some pages with strict autoplay
   settings may suppress it until the page has received a click.
 
 ## Files
-
 | File | Purpose |
 |------|---------|
 | `manifest.json` | Extension manifest (MV3). |
